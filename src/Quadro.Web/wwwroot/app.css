@@ -1,0 +1,110 @@
+:root {
+    --bg: #e9edf1;
+    --column: #f6f7f9;
+    --card: #ffffff;
+    --line: #d7dde3;
+    --ink: #17212b;
+    --muted: #5d6a77;
+    --accent: #0d6a86;
+    --accent-soft: #dceef4;
+    --warn: #b06d00;
+    --warn-soft: #fff1d6;
+    --danger: #b3363f;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); }
+h1, h2 { margin: 0; }
+button, input, textarea, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { color: var(--muted); font-size: .85rem; }
+.loading { padding: 2rem; color: var(--muted); }
+
+.btn { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: .5rem .9rem; font-weight: 600; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.link { border: 0; background: none; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; }
+.link.danger { color: var(--danger); }
+
+.gate { max-width: 420px; margin: 12vh auto 0; padding: 0 16px; }
+.gate h1 { font-size: 2rem; }
+.gate p { color: var(--muted); }
+.gate form { display: grid; gap: .6rem; margin: 1.5rem 0 1rem; }
+.gate input { padding: .7rem .8rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+
+.topbar {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem;
+    padding: .9rem clamp(16px, 3vw, 32px); background: var(--ink); color: #fff;
+}
+.brand { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: #8fb6c4; }
+.topbar h1 { font-size: 1.15rem; }
+.people { display: flex; align-items: center; gap: .3rem; }
+.avatar {
+    width: 2rem; height: 2rem; border-radius: 50%; display: grid; place-items: center;
+    background: #2f4152; color: #fff; font-size: .75rem; font-weight: 700; border: 2px solid var(--ink);
+}
+.avatar.me { background: var(--accent); }
+.online { font-size: .8rem; color: #b9c6d2; margin-left: .35rem; }
+
+.toast {
+    margin: .75rem clamp(16px, 3vw, 32px) 0; padding: .6rem .9rem; border-radius: 8px;
+    background: var(--accent-soft); display: flex; justify-content: space-between; gap: 1rem; align-items: center;
+}
+.toast.error { background: var(--warn-soft); }
+
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 1rem; padding: 1rem clamp(16px, 3vw, 32px) 2rem; align-items: start; }
+@media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+.board { display: flex; gap: .9rem; overflow-x: auto; padding-bottom: .5rem; align-items: flex-start; scroll-snap-type: x proximity; }
+.column {
+    flex: 0 0 272px; max-width: 85vw; background: var(--column); border: 1px solid var(--line); border-radius: 10px;
+    padding: .7rem; display: flex; flex-direction: column; gap: .6rem; scroll-snap-align: start;
+}
+.column.full { border-color: #e2b766; }
+.column header { display: flex; justify-content: space-between; align-items: center; }
+.column h2 { font-size: .95rem; }
+.count { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 0 .5rem; }
+.column.full .count { color: var(--warn); border-color: #e2b766; background: var(--warn-soft); }
+
+.cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .5rem; min-height: 1.5rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; cursor: grab; transition: box-shadow .15s, opacity .15s; }
+.card:hover { box-shadow: 0 1px 3px rgba(23, 33, 43, .12); }
+.card.dragging { opacity: .45; }
+.card.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { box-shadow: 0 0 0 3px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
+.cardbtn { width: 100%; border: 0; background: none; text-align: left; padding: .6rem .7rem; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: .25rem .5rem; }
+.cardbtn .title { font-size: .92rem; line-height: 1.35; }
+.cardbtn .hasdesc { color: var(--muted); }
+.cardbtn .by { grid-column: 1 / -1; font-size: .72rem; color: var(--muted); }
+.add input { width: 100%; padding: .5rem .6rem; border: 1px dashed var(--line); border-radius: 8px; background: transparent; }
+.add input:focus { background: var(--card); border-style: solid; }
+
+.activity { background: var(--column); border: 1px solid var(--line); border-radius: 10px; padding: .9rem; position: sticky; top: 1rem; }
+.activity h2 { font-size: .9rem; margin-bottom: .5rem; }
+.activity ol { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; font-size: .85rem; }
+.activity li { line-height: 1.35; }
+
+.overlay { position: fixed; inset: 0; background: rgba(23, 33, 43, .35); }
+.editor {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(420px, 100vw); background: var(--card);
+    padding: 1.25rem; display: flex; flex-direction: column; gap: .9rem; overflow-y: auto;
+    box-shadow: -4px 0 24px rgba(23, 33, 43, .2);
+}
+.editor form { display: grid; gap: .45rem; }
+.editor label { font-size: .85rem; font-weight: 600; }
+.editor input, .editor textarea, .editor select { border: 1px solid var(--line); border-radius: 8px; padding: .55rem .65rem; background: var(--card); }
+.editor .row { display: flex; gap: .5rem; margin-top: .4rem; }
+.moveto { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.moveto label { width: 100%; }
+.moveto select { flex: 1 1 160px; }
+
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; right: 0; padding: .6rem 1rem; background: var(--warn-soft); z-index: 1000; }
+#blazor-error-ui .dismiss { float: right; cursor: pointer; }
+#components-reconnect-modal { display: none; }
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-failed { display: block; position: fixed; top: 0; left: 0; right: 0; padding: .6rem 1rem; background: var(--warn-soft); text-align: center; z-index: 1000; }
+
+@media (prefers-reduced-motion: reduce) { .card, .card.flash { transition: none; animation: none; } }

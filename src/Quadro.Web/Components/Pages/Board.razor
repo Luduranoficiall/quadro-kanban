@@ -1,0 +1,354 @@
+@page "/"
+@implements IAsyncDisposable
+@inject BoardEngine Engine
+@inject PresenceTracker Presence
+@inject ProtectedLocalStorage Storage
+
+<PageTitle>@(_state?.Name ?? "Quadro") · Quadro</PageTitle>
+
+@if (_name is null)
+{
+    @if (_askName)
+    {
+        <main class="gate">
+            <h1>Quadro</h1>
+            <p>Kanban em tempo real. Tudo que você fizer aparece na hora pra quem estiver com o quadro aberto.</p>
+            <form @onsubmit="SaveName" @onsubmit:preventDefault>
+                <label for="nome">Como você quer aparecer pros outros?</label>
+                <input id="nome" @bind="_nameInput" maxlength="40" placeholder="Seu nome" autofocus />
+                <button class="btn primary" type="submit">Entrar no quadro</button>
+            </form>
+            <p class="hint">Dica: abra em duas abas com nomes diferentes e mova um cartão.</p>
+        </main>
+    }
+}
+else if (_state is null)
+{
+    <p class="loading">Abrindo o quadro…</p>
+}
+else
+{
+    <header class="topbar">
+        <div>
+            <span class="brand">Quadro</span>
+            <h1>@_state.Name</h1>
+        </div>
+        <div class="people" aria-label="Online agora">
+            @foreach (var person in _online)
+            {
+                <span class="avatar @(person == _name ? "me" : "")" title="@person">@Initials(person)</span>
+            }
+            <span class="online">@_online.Count online</span>
+        </div>
+    </header>
+
+    @if (_toast is not null)
+    {
+        <div class="toast @(_toastIsError ? "error" : "")" role="status">
+            @_toast <button class="link" @onclick="() => _toast = null" aria-label="Fechar aviso">✕</button>
+        </div>
+    }
+
+    <div class="layout">
+        <main class="board" aria-label="Colunas do quadro">
+            @foreach (var column in _state.OrderedColumns)
+            {
+                var cards = _state.CardsIn(column.Id);
+                var full = column.WipLimit is { } wip && cards.Count >= wip;
+                <section class="column @(full ? "full" : "")"
+                         @ondragover:preventDefault @ondragover="() => { }"
+                         @ondrop="() => DropAtEnd(column)">
+                    <header>
+                        <h2>@column.Title</h2>
+                        <span class="count" title="@(column.WipLimit is null ? "Sem limite" : $"Limite de {column.WipLimit} cartões em andamento")">
+                            @cards.Count@(column.WipLimit is null ? "" : $"/{column.WipLimit}")
+                        </span>
+                    </header>
+                    <ol class="cards">
+                        @foreach (var card in cards)
+                        {
+                            <li class="card @(card.Id == _draggingId ? "dragging" : "") @(card.Id == _flashId ? "flash" : "")"
+                                draggable="true"
+                                @ondragstart="() => _draggingId = card.Id"
+                                @ondragend="() => _draggingId = null"
+                                @ondragover:preventDefault @ondragover="() => { }"
+                                @ondrop="() => DropBefore(column, card)" @ondrop:stopPropagation>
+                                <button class="cardbtn" @onclick="() => Open(card)">
+                                    <span class="title">@card.Title</span>
+                                    @if (card.Description.Length > 0) { <span class="hasdesc" aria-label="Tem descrição">≡</span> }
+                                    <span class="by">@card.UpdatedBy</span>
+                                </button>
+                            </li>
+                        }
+                    </ol>
+                    <form class="add" @onsubmit="() => Create(column)" @onsubmit:preventDefault>
+                        <input id="novo-@column.Id" placeholder="+ Novo cartão" @bind="_newTitles[column.Id]" maxlength="200" aria-label="Novo cartão em @column.Title" />
+                    </form>
+                </section>
+            }
+        </main>
+
+        <aside class="activity" aria-label="Atividade">
+            <h2>Agora há pouco</h2>
+            @if (_activity.Count == 0)
+            {
+                <p class="hint">O que as pessoas fizerem aparece aqui.</p>
+            }
+            <ol>
+                @foreach (var a in _activity)
+                {
+                    <li><strong>@a.Actor</strong> @a.Text</li>
+                }
+            </ol>
+        </aside>
+    </div>
+
+    @if (_editing is not null && _state.Card(_editing.Id) is { } current)
+    {
+        <div class="overlay" @onclick="Close"></div>
+        <section class="editor" role="dialog" aria-label="Editar cartão">
+            <form @onsubmit="SaveEdit" @onsubmit:preventDefault>
+                <label for="ed-titulo">Título</label>
+                <input id="ed-titulo" @bind="_editTitle" maxlength="200" />
+                <label for="ed-desc">Descrição</label>
+                <textarea id="ed-desc" rows="5" @bind="_editDescription" maxlength="4000"></textarea>
+                <div class="row">
+                    <button class="btn primary" type="submit">Salvar</button>
+                    <button class="btn" type="button" @onclick="Close">Fechar</button>
+                </div>
+            </form>
+
+            <div class="moveto">
+                <label for="ed-coluna">Mover para</label>
+                <select id="ed-coluna" value="@current.ColumnId" @onchange="e => MoveTo(current, e.Value as string)">
+                    @foreach (var c in _state.OrderedColumns)
+                    {
+                        <option value="@c.Id">@c.Title</option>
+                    }
+                </select>
+                <button class="btn" type="button" @onclick="() => Nudge(current, -1)" aria-label="Subir na coluna">↑</button>
+                <button class="btn" type="button" @onclick="() => Nudge(current, 1)" aria-label="Descer na coluna">↓</button>
+            </div>
+
+            <p class="hint">Versão @current.Version · última mudança por @current.UpdatedBy</p>
+            @if (_confirmDelete)
+            {
+                <button class="btn danger" type="button" @onclick="() => Delete(current)">Sim, apagar o cartão</button>
+            }
+            else
+            {
+                <button class="link danger" type="button" @onclick="() => _confirmDelete = true">Apagar cartão</button>
+            }
+        </section>
+    }
+}
+
+@code {
+    private const string BoardId = DemoSeed.BoardId;
+    private const int ActivitySize = 12;
+
+    private BoardState? _state;
+    private string? _name;
+    private bool _askName;
+    private string _nameInput = "";
+    private readonly string _presenceKey = "blazor:" + Guid.NewGuid().ToString("N");
+    private IReadOnlyList<string> _online = [];
+    private readonly List<(string Actor, string Text)> _activity = [];
+    private readonly Dictionary<string, string> _newTitles = new();
+    private string? _draggingId, _flashId, _toast;
+    private bool _toastIsError, _confirmDelete;
+    private Card? _editing;
+    private string _editTitle = "", _editDescription = "";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var saved = await Storage.GetAsync<string>("quadro.nome");
+            if (saved.Success && !string.IsNullOrWhiteSpace(saved.Value)) { await Enter(saved.Value); return; }
+        }
+        catch (System.Security.Cryptography.CryptographicException) { /* chave mudou: pede o nome de novo */ }
+        _askName = true;
+        StateHasChanged();
+    }
+
+    private async Task SaveName()
+    {
+        var name = _nameInput.Trim();
+        if (name.Length == 0) return;
+        await Storage.SetAsync("quadro.nome", name);
+        await Enter(name);
+    }
+
+    private async Task Enter(string name)
+    {
+        _name = name;
+        Engine.OpApplied += OnOp;
+        Presence.Changed += OnPresence;
+        _state = await Engine.GetAsync(BoardId);
+        foreach (var c in _state?.Columns ?? []) _newTitles.TryAdd(c.Id, "");
+        _online = Presence.Join(BoardId, _presenceKey, name);
+        StateHasChanged();
+    }
+
+    // Chega de dentro da fila do quadro, em ordem. Só enfileira o redesenho; não segura a fila.
+    private Task OnOp(OpEnvelope e)
+    {
+        if (e.BoardId != BoardId) return Task.CompletedTask;
+        _ = InvokeAsync(async () =>
+        {
+            if (_state is null) return;
+            if (e.Op.Seq > _state.Seq + 1)
+                _state = await Engine.GetAsync(BoardId); // perdeu alguma: pega a foto inteira
+            else
+                _state = BoardDecider.Apply(_state, e.Op);
+            foreach (var c in _state!.Columns) _newTitles.TryAdd(c.Id, "");
+            Describe(e.Op);
+            if (_editing is not null && _state.Card(_editing.Id) is null)
+            {
+                Notify($"{e.Op.Actor} apagou o cartão que você estava editando.", error: true);
+                _editing = null;
+            }
+            StateHasChanged();
+        });
+        return Task.CompletedTask;
+    }
+
+    private void OnPresence(string boardId, IReadOnlyList<string> online)
+    {
+        if (boardId != BoardId) return;
+        _ = InvokeAsync(() => { _online = online; StateHasChanged(); });
+    }
+
+    private async Task<bool> Run(BoardCommand command)
+    {
+        var result = await Engine.ExecuteAsync(BoardId, command with { Actor = _name! });
+        if (result.Status == CommandStatus.Applied) return true;
+        Notify(result.Message ?? "Não deu certo.", error: true);
+        return false;
+    }
+
+    private async Task Create(Column column)
+    {
+        var title = _newTitles.GetValueOrDefault(column.Id, "").Trim();
+        if (title.Length == 0) return;
+        if (await Run(new CreateCard(Guid.NewGuid().ToString("N")[..10], column.Id, title) { Actor = "" }))
+            _newTitles[column.Id] = "";
+    }
+
+    private async Task DropBefore(Column column, Card target)
+    {
+        var id = _draggingId;
+        _draggingId = null;
+        if (id is null || id == target.Id || _state?.Card(id) is not { } card) return;
+        await Run(new MoveCard(card.Id, card.Version, column.Id, AfterCardId: null, BeforeCardId: target.Id) { Actor = "" });
+    }
+
+    private async Task DropAtEnd(Column column)
+    {
+        var id = _draggingId;
+        _draggingId = null;
+        if (id is null || _state?.Card(id) is not { } card) return;
+        var last = _state.CardsIn(column.Id).LastOrDefault(c => c.Id != id);
+        if (card.ColumnId == column.Id && last is not null && string.CompareOrdinal(card.Position, last.Position) > 0) return;
+        await Run(new MoveCard(card.Id, card.Version, column.Id, AfterCardId: last?.Id, BeforeCardId: null) { Actor = "" });
+    }
+
+    private async Task MoveTo(Card card, string? columnId)
+    {
+        if (columnId is null || columnId == card.ColumnId) return;
+        var last = _state!.CardsIn(columnId).LastOrDefault();
+        await Run(new MoveCard(card.Id, card.Version, columnId, last?.Id, null) { Actor = "" });
+    }
+
+    /// <summary>Alternativa ao arrastar (teclado e celular): sobe ou desce uma posição.</summary>
+    private async Task Nudge(Card card, int direction)
+    {
+        var list = _state!.CardsIn(card.ColumnId).ToList();
+        var index = list.FindIndex(c => c.Id == card.Id);
+        var target = index + direction;
+        if (target < 0 || target >= list.Count) return;
+        var command = direction < 0
+            ? new MoveCard(card.Id, card.Version, card.ColumnId, null, list[target].Id) { Actor = "" }
+            : new MoveCard(card.Id, card.Version, card.ColumnId, list[target].Id, null) { Actor = "" };
+        await Run(command);
+    }
+
+    private void Open(Card card)
+    {
+        _editing = card;
+        _editTitle = card.Title;
+        _editDescription = card.Description;
+        _confirmDelete = false;
+    }
+
+    private void Close() { _editing = null; _confirmDelete = false; }
+
+    private async Task SaveEdit()
+    {
+        var original = _editing!;
+        if (_state!.Card(original.Id) is null) { Close(); return; }
+
+        // Versão de quando o editor abriu: se alguém salvou no meio, é conflito, não sobrescreve.
+        var result = await Engine.ExecuteAsync(BoardId, new EditCard(original.Id, original.Version, _editTitle, _editDescription) { Actor = _name! });
+        if (result.Status == CommandStatus.Applied) { Close(); return; }
+        if (result.Status != CommandStatus.Conflict || result.Current is null)
+        {
+            Notify(result.Message ?? "Não deu certo.", error: true);
+            return;
+        }
+
+        // Junta o rascunho com o que a outra pessoa salvou, e o próximo salvar compara com a versão nova.
+        var merged = CardMerge.Merge(original, new CardDraft(_editTitle, _editDescription), result.Current);
+        _editTitle = merged.Draft.Title;
+        _editDescription = merged.Draft.Description;
+        _editing = result.Current;
+        Notify(merged.Clean
+            ? $"{result.Current.UpdatedBy} mudou esse cartão enquanto você editava. Juntei as duas mudanças: confira e salve de novo."
+            : $"Você e {result.Current.UpdatedBy} mudaram {string.Join(" e ", merged.BothChanged)} ao mesmo tempo. Ficou o seu na tela: confira antes de salvar.",
+            error: true);
+    }
+
+    private async Task Delete(Card card)
+    {
+        if (await Run(new DeleteCard(card.Id, card.Version) { Actor = "" })) Close();
+    }
+
+    private void Describe(BoardOp op)
+    {
+        string? text = op switch
+        {
+            CardCreated o => $"criou \"{o.Title}\" em {ColumnTitle(o.ColumnId)}",
+            CardMoved o => $"moveu \"{_state!.Card(o.CardId)?.Title}\" para {ColumnTitle(o.ToColumnId)}",
+            CardEdited o => $"editou \"{o.Title}\"",
+            CardDeleted => "apagou um cartão",
+            ColumnAdded o => $"criou a coluna {o.Title}",
+            _ => null,
+        };
+        if (text is null) return;
+        _activity.Insert(0, (op.Actor == _name ? "Você" : op.Actor, text));
+        if (_activity.Count > ActivitySize) _activity.RemoveAt(_activity.Count - 1);
+        if (op is CardMoved or CardCreated or CardEdited && op.Actor != _name)
+            _flashId = op switch { CardMoved m => m.CardId, CardCreated c => c.CardId, CardEdited e => e.CardId, _ => null };
+    }
+
+    private string ColumnTitle(string id) => _state?.Column(id)?.Title ?? "?";
+
+    private void Notify(string message, bool error)
+    {
+        _toast = message;
+        _toastIsError = error;
+    }
+
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    public ValueTask DisposeAsync()
+    {
+        Engine.OpApplied -= OnOp;
+        Presence.Changed -= OnPresence;
+        if (_name is not null) Presence.Leave(BoardId, _presenceKey);
+        return ValueTask.CompletedTask;
+    }
+}
