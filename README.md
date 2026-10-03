@@ -62,6 +62,9 @@ conectam clientes SignalR reais:
 - ninguém consegue agir em nome de outra pessoa;
 - o log reconstrói o quadro, e o quadro sobrevive a derrubar e subir o app de novo.
 
+Toda a regra, o servidor e a tela são C#, sem nenhum arquivo JavaScript próprio. Fora do C# só
+tem o CSS do visual.
+
 ## Rodar
 
 Precisa do .NET 8 SDK.
